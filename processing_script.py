@@ -1,8 +1,9 @@
-
 import random
 import numpy as np
 import nibabel as nib
 from nibabel.processing import resample_to_output
+import os
+import boto3 
 
 
 # To do:
@@ -12,6 +13,45 @@ from nibabel.processing import resample_to_output
 # Function to add random lesions (black spots) or signal drop-out
 
 
+def main() : 
+    run = 'local'
+    
+    if run == 'global' :
+        local_data_path = 'src/'
+        input_bucket = os.environ['INPUT_BUCKET'] 
+        input_prefix = os.evnciron['INPUT_PREFIX']
+        output_bucket = os.environ['OUTPUT_BUCKET']
+        output_prefix = os.environ['OUTPUT_PREFIX']
+       
+
+    elif run == 'local' : 
+        local_data_path = 'src/'
+        input_bucket = "loni-data-curated-20230501"
+        input_prefix = 'ppmi_500_updated_cohort/curated/data/PPMI/'
+        output_bucket = 'tempamr' # FIXME 
+        output_prefix = 'output_prefix/'  # FIXME
+
+
+    ## Get filepaths
+    modality = 'T1w'
+    keys = search_s3(input_bucket, input_prefix, modality, '.nii.gz')
+    key = keys[0] # FIXME
+    file_path = get_object(input_bucket, key, local_data_path)
+
+    
+    ## Processing 
+    img = read_img(file_path)
+    img = resize_vox(img, [3,3,3])
+    img = rotate_img(img, 30)
+    img = remove_slices(img, 40)
+
+
+    ## Write output to output_bucket 
+    write_to_s3(file_path, img, output_bucket, output_prefix)
+
+
+
+    
 # simple function to read files, maybe expand later
 def read_img(filepath):
     """
@@ -107,3 +147,58 @@ def remove_slices(img, percentage, axis=2, pattern='random'):
     new_img[:,:,remove_slices] = 0
     new_img=nib.Nifti1Image(new_img, img.affine, img.header)
     return(new_img)
+
+
+
+def search_s3(bucket, prefix, modality, search_string):
+    client = boto3.client('s3', region_name="us-east-1")
+    paginator = client.get_paginator('list_objects')
+    pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+    keys = [] 
+    for page in pages:
+        contents = page['Contents']
+        for c in contents:
+            keys.append(c['Key'])
+    if modality:
+        keys = [key for key in keys if modality in key]
+    if search_string : 
+        keys = [key for key in keys if search_string in key]
+    return keys
+
+
+
+def get_object(bucket, key, local_data_path ):
+    print(f"Downloading: {key} to {local_data_path}") 
+    s3 = boto3.client('s3')
+    os.makedirs(local_data_path, exist_ok=True)    
+    filename = key.split('/')[-1]
+    local_path = local_data_path + filename
+    s3.download_file(bucket, key, local_path)
+    return local_path
+
+
+
+def write_to_s3(file_path, img, output_bucket, output_prefix) :         
+    client = boto3.client('s3')
+    nrg_path = nrg(file_path)
+    nib.save(img, file_path) 
+    client.upload_file(file_path, output_bucket, output_prefix + nrg_path)   
+    
+
+
+def nrg(file_path) : 
+    img_name = file_path.split('/')[-1]
+    remove_ext = img_name.split('.')[0]
+    split = remove_ext.split('-')
+    project = split[0]
+    subject = split[1]
+    date = split[2]
+    modality = split[3]
+    object = split[4]
+    full_path = project + '/' + subject + '/' + date + '/' + modality + '/' + object + '/' + img_name 
+    return full_path
+    
+
+
+if __name__ == "__main__":
+    main()
