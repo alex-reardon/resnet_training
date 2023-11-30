@@ -27,16 +27,15 @@ def main() :
     elif run == 'local' : 
         local_data_path = 'src/'
         input_bucket = "loni-data-curated-20230501"
-        input_prefix = 'ppmi_500_updated_cohort/curated/data/PPMI/'
+        input_prefix = 'ppmi_500_updated_cohort/curated/data/PPMI/137482/20220411/T1w/1575181/'
         output_bucket = 'tempamr' # FIXME 
         output_prefix = 'output_prefix/'  # FIXME
 
 
     ## Get filepaths
-    modality = 'T1w'
-    keys = search_s3(input_bucket, input_prefix, modality, '.nii.gz')
-    key = keys[0] # FIXME
-    file_path = get_object(input_bucket, key, local_data_path)
+    keys = search_s3(input_bucket, input_prefix, '.nii.gz')
+    for key in keys :
+        file_path = get_object(input_bucket, key, local_data_path)
 
     
     ## Processing 
@@ -150,7 +149,7 @@ def remove_slices(img, percentage, axis=2, pattern='random'):
 
 
 
-def search_s3(bucket, prefix, modality, search_string):
+def search_s3(bucket, prefix, search_string):
     client = boto3.client('s3', region_name="us-east-1")
     paginator = client.get_paginator('list_objects')
     pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
@@ -159,9 +158,7 @@ def search_s3(bucket, prefix, modality, search_string):
         contents = page['Contents']
         for c in contents:
             keys.append(c['Key'])
-    if modality:
-        keys = [key for key in keys if modality in key]
-    if search_string : 
+    if search_string:
         keys = [key for key in keys if search_string in key]
     return keys
 
