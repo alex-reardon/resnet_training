@@ -3,7 +3,7 @@ import numpy as np
 import nibabel as nib
 from nibabel.processing import resample_to_output
 import os
-import boto3 
+import boto3
 
 
 # To do:
@@ -13,22 +13,22 @@ import boto3
 # Function to add random lesions (black spots) or signal drop-out
 
 
-def main() : 
+def main() :
     run = 'local'
-    
+
     if run == 'global' :
         local_data_path = 'src/'
-        input_bucket = os.environ['INPUT_BUCKET'] 
+        input_bucket = os.environ['INPUT_BUCKET']
         input_prefix = os.evnciron['INPUT_PREFIX']
         output_bucket = os.environ['OUTPUT_BUCKET']
         output_prefix = os.environ['OUTPUT_PREFIX']
-       
 
-    elif run == 'local' : 
+
+    elif run == 'local' :
         local_data_path = 'src/'
         input_bucket = "loni-data-curated-20230501"
         input_prefix = 'ppmi_500_updated_cohort/curated/data/PPMI/137482/20220411/T1w/1575181/'
-        output_bucket = 'tempamr' # FIXME 
+        output_bucket = 'tempamr' # FIXME
         output_prefix = 'output_prefix/'  # FIXME
 
 
@@ -37,20 +37,20 @@ def main() :
     for key in keys :
         file_path = get_object(input_bucket, key, local_data_path)
 
-    
-    ## Processing 
+
+    ## Processing
     img = read_img(file_path)
     img = resize_vox(img, [3,3,3])
     img = rotate_img(img, 30)
     img = remove_slices(img, 40)
 
 
-    ## Write output to output_bucket 
+    ## Write output to output_bucket
     write_to_s3(file_path, img, output_bucket, output_prefix)
 
 
 
-    
+
 # simple function to read files, maybe expand later
 def read_img(filepath):
     """
@@ -149,11 +149,33 @@ def remove_slices(img, percentage, axis=2, pattern='random'):
 
 
 
+def add_noise(img, factor=2):
+    """"
+    Img needs to be a nibabel image object
+    Factor is used to scale up and down the amount of Gaussian noise added to the image
+    """
+    # copy data
+    noise_img = img.get_fdata().copy()
+    # grab mean / sd to scale random noise
+    img_mean=np.mean(noise_img)
+    img_sd=np.std(noise_img)
+    # just add Gaussian noise for now using the specified scaling params
+    # only add positive values to keep minimum value of image positive (like a half-normal distribution)
+    noise =  abs(np.random.normal(loc=img_mean, scale=img_sd, size=img.shape))
+    # increase or decrease amount of noise using scaling factor
+    noise *= factor
+    # use min for clipping or set to 0?
+    noise_img = np.clip(noise_img + noise, np.min(noise_img), np.max(noise_img))
+    noisy_img = nib.Nifti1Image(noise_img, img.affine, img.header)
+    return(noisy_img)
+
+
+
 def search_s3(bucket, prefix, search_string):
     client = boto3.client('s3', region_name="us-east-1")
     paginator = client.get_paginator('list_objects')
     pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
-    keys = [] 
+    keys = []
     for page in pages:
         contents = page['Contents']
         for c in contents:
@@ -165,9 +187,9 @@ def search_s3(bucket, prefix, search_string):
 
 
 def get_object(bucket, key, local_data_path ):
-    print(f"Downloading: {key} to {local_data_path}") 
+    print(f"Downloading: {key} to {local_data_path}")
     s3 = boto3.client('s3')
-    os.makedirs(local_data_path, exist_ok=True)    
+    os.makedirs(local_data_path, exist_ok=True)
     filename = key.split('/')[-1]
     local_path = local_data_path + filename
     s3.download_file(bucket, key, local_path)
@@ -175,15 +197,15 @@ def get_object(bucket, key, local_data_path ):
 
 
 
-def write_to_s3(file_path, img, output_bucket, output_prefix) :         
+def write_to_s3(file_path, img, output_bucket, output_prefix) :
     client = boto3.client('s3')
     nrg_path = nrg(file_path)
-    nib.save(img, file_path) 
-    client.upload_file(file_path, output_bucket, output_prefix + nrg_path)   
-    
+    nib.save(img, file_path)
+    client.upload_file(file_path, output_bucket, output_prefix + nrg_path)
 
 
-def nrg(file_path) : 
+
+def nrg(file_path) :
     img_name = file_path.split('/')[-1]
     remove_ext = img_name.split('.')[0]
     split = remove_ext.split('-')
@@ -192,9 +214,9 @@ def nrg(file_path) :
     date = split[2]
     modality = split[3]
     object = split[4]
-    full_path = project + '/' + subject + '/' + date + '/' + modality + '/' + object + '/' + img_name 
+    full_path = project + '/' + subject + '/' + date + '/' + modality + '/' + object + '/' + img_name
     return full_path
-    
+
 
 
 if __name__ == "__main__":
