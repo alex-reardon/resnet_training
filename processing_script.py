@@ -4,6 +4,7 @@ import nibabel as nib
 from nibabel.processing import resample_to_output
 import os
 import boto3
+import ast 
 
 
 # To do:
@@ -11,6 +12,7 @@ import boto3
 # Expand functions so they can work with fMRI and DWI data
 # Function to add various types of noise to image
 # Function to add random lesions (black spots) or signal drop-out
+
 
 
 def main() :
@@ -38,21 +40,82 @@ def main() :
         file_path = get_object(input_bucket, key, local_data_path)
 
 
-    ## Processing
+    ## Read in image 
     img = read_img(file_path)
-    img = resize_vox(img, [3,3,3])
-    img = rotate_img(img, 30)
-    img = remove_slices(img, 40)
+    
+    
+    ## Image Processing (EXAMPLES)
+    out_imgs = choose_function(img, 'remove_slices')
+    # out_imgs = choose_function(img, 'resize_vox')
+    # out_imgs = choose_function(img, 'rotate_img')
+    # out_imgs = choose_function(img, 'add_noise') 
 
-
+    
     ## Write output to output_bucket
     write_to_s3(file_path, img, output_bucket, output_prefix)
 
 
 
 
+def choose_function(img, function_name) : 
+    n_images = int(input("Enter the number of output images you'd like to create : "))
+    out_imgs = [] 
+    
+    if function_name == 'remove_slices' :
+        percentage_min = float(input("Enter the minimum slice percentage you'd like to remove: "))
+        percentage_max = float(input("Enter the max slice percentagage you'd like to remove : "))
+        step_size = (percentage_max - percentage_min) / (n_images - 1)
+        for i in range(n_images): 
+            current_percentage = percentage_min + i * step_size
+            out_img = remove_slices(img, current_percentage)
+            out_imgs.append(out_img)
+            # save img FIXME
+
+    elif function_name == 'resize_vox' : 
+        dimensions_min = input("Enter the minimum dimensions you'd like to resize to (Enter three numbers separated by a comma and enclosed in square brackets (e.g., [1, 1, 1])): ")
+        dimensions_max = input("Enter the max dimensions  you'd like to resize to (Enter three numbers separated by a comma and enclosed in square brackets (e.g., [3, 3, 3]): ")
+        dimensions_min = ast.literal_eval(dimensions_min)
+        dimensions_min = np.array(dimensions_min)
+        dimensions_max = ast.literal_eval(dimensions_max)
+        dimensions_max = np.array(dimensions_max)
+        step_size = (dimensions_max - dimensions_min) / (n_images - 1)
+        for i in range(n_images) : 
+            current_dimensions = dimensions_min + i * step_size
+            out_img = resize_vox(img, current_dimensions)
+            out_imgs.append(out_img)
+            # save img FIXME
+            
+    elif function_name == 'rotate_img' : 
+        rotate_min = float(input("Enter the minimum image rotation you'd like to apply: "))
+        rotate_max = float(input("Enter the max image rotation you'd like to apply: "))
+        step_size = (rotate_max - rotate_min) / (n_images - 1)
+        for i in range(n_images) : 
+            current_rotation = rotate_min + i * step_size
+            out_img = rotate_img(img, current_rotation)
+            out_imgs.append(out_img)
+            # save img FIXME
+            
+    elif function_name == 'add_noise' : 
+        factor_min = float(input("Enter the minimum factor you'd like to apply: "))
+        factor_max = float(input("Enter the max factor you'd like to apply: "))  
+        step_size = (factor_max - factor_min) / (n_images - 1)
+        for i in range(n_images) : 
+            current_factor = factor_min + i * step_size
+            out_img = rotate_img(img, current_factor)
+            out_imgs.append(out_img)
+            # save img FIXME
+    
+    return out_imgs
+
+
+
+
+
+
+
 # simple function to read files, maybe expand later
 def read_img(filepath):
+    
     """
     Read nifti file from path and return a nibabel image object
     Filepath needs to be full path to file
