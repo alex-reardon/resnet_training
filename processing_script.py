@@ -45,31 +45,34 @@ def main() :
     
     
     ## Image Processing (EXAMPLES)
-    out_imgs = choose_function(img, 'remove_slices')
-    # out_imgs = choose_function(img, 'resize_vox')
-    # out_imgs = choose_function(img, 'rotate_img')
-    # out_imgs = choose_function(img, 'add_noise') 
-
-    
-    ## Write output to output_bucket
-    write_to_s3(file_path, img, output_bucket, output_prefix)
+    # choose_function(img, 'remove_slices', file_path, output_bucket, output_prefix)
+    # choose_function(img, 'resize_vox', file_path, output_bucket, output_prefix)
+    choose_function(img, 'rotate_img', file_path, output_bucket, output_prefix)
+    # choose_function(img, 'add_noise', file_path, output_bucket, output_prefix)
 
 
 
 
-def choose_function(img, function_name) : 
+def choose_function(img, function_name, file_path, output_bucket, output_prefix) : 
     n_images = int(input("Enter the number of output images you'd like to create : "))
-    out_imgs = [] 
-    
+
     if function_name == 'remove_slices' :
         percentage_min = float(input("Enter the minimum slice percentage you'd like to remove: "))
         percentage_max = float(input("Enter the max slice percentagage you'd like to remove : "))
+        pattern = input("Enter the pattern you'd like to apply (or type 'None' to skip): ")
+        axis = input("Enter the axis you'd like to apply (or type 'None' to skip): ")
+        if pattern.lower() == 'none':
+            pattern = None
+        if axis.lower() == 'none':
+            axis = None
+            
         step_size = (percentage_max - percentage_min) / (n_images - 1)
         for i in range(n_images): 
             current_percentage = percentage_min + i * step_size
             out_img = remove_slices(img, current_percentage)
-            out_imgs.append(out_img)
-            # save img FIXME
+            output_name = '_' + function_name + '_' + 'percentage=' + str(current_percentage) + '_' + 'pattern=' + str(pattern) + '_' + 'axis=' + str(axis) + '.nii.gz'
+            write_to_s3(file_path + output_name, out_img, output_bucket, output_prefix) 
+
 
     elif function_name == 'resize_vox' : 
         dimensions_min = input("Enter the minimum dimensions you'd like to resize to (Enter three numbers separated by a comma and enclosed in square brackets (e.g., [1, 1, 1])): ")
@@ -82,19 +85,28 @@ def choose_function(img, function_name) :
         for i in range(n_images) : 
             current_dimensions = dimensions_min + i * step_size
             out_img = resize_vox(img, current_dimensions)
-            out_imgs.append(out_img)
-            # save img FIXME
+            output_name = '_' + function_name + '_' + 'dimensions=' + str(current_dimensions) + '.nii.gz'
+            write_to_s3(file_path + output_name, out_img, output_bucket, output_prefix) 
+
             
     elif function_name == 'rotate_img' : 
         rotate_min = float(input("Enter the minimum image rotation you'd like to apply: "))
         rotate_max = float(input("Enter the max image rotation you'd like to apply: "))
+        affine = input("Enter the affine you'd like to apply (or type 'None' to skip): ")
+        axis = input("Enter the axis you'd like to apply (or type 'None' to skip): ")
+        if axis.lower() == 'none':
+            axis = None
+        if affine.lower() == 'none':
+            affine = None
+            
         step_size = (rotate_max - rotate_min) / (n_images - 1)
         for i in range(n_images) : 
             current_rotation = rotate_min + i * step_size
             out_img = rotate_img(img, current_rotation)
-            out_imgs.append(out_img)
-            # save img FIXME
-            
+            output_name = '_' + function_name + '-' + 'rotation_' + str(current_rotation) + '-' + 'affine_' + str(affine) + '-' + 'axis_' + str(axis) + '.nii.gz'
+            write_to_s3(file_path, out_img, output_bucket, output_prefix, output_name) 
+
+
     elif function_name == 'add_noise' : 
         factor_min = float(input("Enter the minimum factor you'd like to apply: "))
         factor_max = float(input("Enter the max factor you'd like to apply: "))  
@@ -102,10 +114,11 @@ def choose_function(img, function_name) :
         for i in range(n_images) : 
             current_factor = factor_min + i * step_size
             out_img = rotate_img(img, current_factor)
-            out_imgs.append(out_img)
-            # save img FIXME
-    
-    return out_imgs
+            output_name = '_' + function_name + '_' + 'factor=' + str(current_factor) + '.nii.gz'
+            write_to_s3(file_path, out_img, output_bucket, output_prefix, output_name) 
+
+
+
 
 
 
@@ -260,15 +273,15 @@ def get_object(bucket, key, local_data_path ):
 
 
 
-def write_to_s3(file_path, img, output_bucket, output_prefix) :
+def write_to_s3(file_path, img, output_bucket, output_prefix, output_name) :
     client = boto3.client('s3')
-    nrg_path = nrg(file_path)
+    nrg_path = nrg(file_path, output_name)
     nib.save(img, file_path)
     client.upload_file(file_path, output_bucket, output_prefix + nrg_path)
 
 
 
-def nrg(file_path) :
+def nrg(file_path, output_name) :
     img_name = file_path.split('/')[-1]
     remove_ext = img_name.split('.')[0]
     split = remove_ext.split('-')
@@ -277,7 +290,7 @@ def nrg(file_path) :
     date = split[2]
     modality = split[3]
     object = split[4]
-    full_path = project + '/' + subject + '/' + date + '/' + modality + '/' + object + '/' + img_name
+    full_path = project + '/' + subject + '/' + date + '/' + modality + '/' + object + '/' + remove_ext + output_name + '.nii.gz'
     return full_path
 
 
